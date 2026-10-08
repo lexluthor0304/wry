@@ -20,7 +20,9 @@ use std::{
 /// ## Platform-specific
 ///
 /// - **Linux**: [`WebContextExtUnix::new_with_memory_pressure_settings`] creates a context whose
-///   WebKitGTK web processes use custom memory-pressure settings.
+///   WebKitGTK web processes use custom memory-pressure settings, and
+///   [`set_default_memory_pressure_settings`] gives every context created with
+///   [`WebContext::new`] afterwards the same.
 ///
 /// # Warning
 ///
@@ -199,6 +201,54 @@ impl WebContextExtUnix for WebContext {
   }
 }
 
+/// The process-wide default of [`set_default_memory_pressure_settings`].
+#[cfg(gtk)]
+static DEFAULT_MEMORY_PRESSURE_SETTINGS: std::sync::RwLock<Option<MemoryPressureSettings>> =
+  std::sync::RwLock::new(None);
+
+/// Set the WebKitGTK memory-pressure settings that every [`WebContext`] created afterwards with
+/// [`WebContext::new`] (or `WebContext::default()`) applies to its web processes, which covers
+/// the webviews built without an explicit context and the contexts a framework such as Tauri
+/// creates on the application's behalf.
+///
+/// Call it before any `WebContext` or `WebView` is created: WebKitGTK takes the settings only
+/// when a `WebKitWebContext` is constructed, so a context created earlier keeps the settings it
+/// was built with. A context created with
+/// [`WebContextExtUnix::new_with_memory_pressure_settings`] uses its own settings instead, and
+/// the ephemeral context of a webview created with
+/// [`WebViewBuilder::with_incognito`](crate::WebViewBuilder::with_incognito) keeps WebKitGTK's
+/// defaults. Setting `MemoryPressureSettings::default()` (every field `None`) returns later
+/// contexts to WebKitGTK's defaults.
+///
+/// # Example
+///
+/// Let the web processes use half of a 16 GB machine before WebKitGTK's strict policy starts
+/// (with the default limit of 3 GB it starts at 1.5 GB), whichever code creates the context:
+///
+/// ```no_run
+/// use wry::{set_default_memory_pressure_settings, MemoryPressureSettings};
+///
+/// set_default_memory_pressure_settings(MemoryPressureSettings {
+///   memory_limit_mb: Some(8192),
+///   ..Default::default()
+/// });
+/// ```
+#[cfg(gtk)]
+pub fn set_default_memory_pressure_settings(settings: MemoryPressureSettings) {
+  *DEFAULT_MEMORY_PRESSURE_SETTINGS
+    .write()
+    .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(settings);
+}
+
+/// The process-wide default set by [`set_default_memory_pressure_settings`], or `None` while
+/// none was set and new contexts keep WebKitGTK's defaults.
+#[cfg(gtk)]
+pub fn default_memory_pressure_settings() -> Option<MemoryPressureSettings> {
+  *DEFAULT_MEMORY_PRESSURE_SETTINGS
+    .read()
+    .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[cfg(not(gtk))]
 #[derive(Debug)]
 pub(crate) struct WebContextImpl;
@@ -210,4 +260,27 @@ impl WebContextImpl {
   }
 
   fn set_allows_automation(&mut self, _flag: bool) {}
+}
+
+#[cfg(all(test, gtk))]
+mod tests {
+  use super::{
+    default_memory_pressure_settings, set_default_memory_pressure_settings, MemoryPressureSettings,
+  };
+
+  #[test]
+  fn default_memory_pressure_settings_are_kept_process_wide() {
+    assert_eq!(default_memory_pressure_settings(), None);
+    let settings = MemoryPressureSettings {
+      memory_limit_mb: Some(8192),
+      ..Default::default()
+    };
+    set_default_memory_pressure_settings(settings);
+    assert_eq!(default_memory_pressure_settings(), Some(settings));
+    set_default_memory_pressure_settings(MemoryPressureSettings::default());
+    assert_eq!(
+      default_memory_pressure_settings(),
+      Some(MemoryPressureSettings::default())
+    );
+  }
 }

@@ -29,8 +29,12 @@ pub struct WebContextImpl {
 }
 
 impl WebContextImpl {
+  /// A context with the process-wide default memory-pressure settings, when
+  /// [`set_default_memory_pressure_settings`](crate::set_default_memory_pressure_settings) set
+  /// them, else with WebKitGTK's defaults.
   pub fn new(data_directory: Option<&Path>) -> Self {
-    Self::new_with_memory_pressure_settings(data_directory, None)
+    let default_settings = crate::default_memory_pressure_settings();
+    Self::new_with_memory_pressure_settings(data_directory, default_settings.as_ref())
   }
 
   pub fn new_with_memory_pressure_settings(

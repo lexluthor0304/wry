@@ -414,7 +414,10 @@ pub use http;
 pub use proxy::{ProxyConfig, ProxyEndpoint};
 pub use web_context::WebContext;
 #[cfg(gtk)]
-pub use web_context::{MemoryPressureSettings, WebContextExtUnix};
+pub use web_context::{
+  default_memory_pressure_settings, set_default_memory_pressure_settings, MemoryPressureSettings,
+  WebContextExtUnix,
+};
 
 #[cfg(target_os = "ios")]
 pub type InputAccessoryViewBuilder =
